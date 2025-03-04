@@ -129,7 +129,7 @@ const AudioChat = forwardRef((props, ref) => {
       setAudioStream(stream);
 
       const recorder = new MediaRecorder(stream, { 
-        mimeType: "audio/wav",
+        mimeType: "audio/webm",
         audioBitsPerSecond: 16000
       });
       
@@ -176,7 +176,7 @@ const AudioChat = forwardRef((props, ref) => {
       if (audioStream) {
         try {
           const recorder = new MediaRecorder(audioStream, { 
-            mimeType: "audio/wav",
+            mimeType: "audio/webm",
             audioBitsPerSecond: 16000
           });
           
@@ -216,7 +216,7 @@ const AudioChat = forwardRef((props, ref) => {
     if (audioChunksRef.current.length === 0) return;
 
     try {
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
       
       if (
         wsRef.current && 
