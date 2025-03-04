@@ -3,249 +3,257 @@ import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } f
 const AudioChat = forwardRef((props, ref) => {
   const [mediaRecorder, setMediaRecorder] = useState(null);
   const [audioStream, setAudioStream] = useState(null);
-  const [isActive, setIsActive] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
   const audioPlayerRef = useRef(null);
-  const isPlayingRef = useRef(false);
-  const isProcessingResponseRef = useRef(false);
+  const wsRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const isProcessingRef = useRef(false);
+  const reconnectAttemptRef = useRef(0);
 
-  // Start recording automatically when component mounts
+  // WebSocket setup
   useEffect(() => {
-    startRecording();
-    
-    // Cleanup when component unmounts
+    const connectWebSocket = () => {
+      // Close existing connection if any
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+
+      const ws = new WebSocket('wss://widget-113024725109.us-central1.run.app/Response/ws/audio');
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        reconnectAttemptRef.current = 0;
+        initializeMicrophone();
+      };
+
+      ws.onmessage = async (event) => {
+        try {
+          if (event.data instanceof Blob) {
+            // Handle audio response
+            const audioBlob = new Blob([event.data], { type: 'audio/wav' });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            
+            if (audioPlayerRef.current) {
+              isProcessingRef.current = true;
+              
+              audioPlayerRef.current.src = audioUrl;
+              await audioPlayerRef.current.play().catch(error => {
+                console.error('Error playing audio:', error);
+                isProcessingRef.current = false;
+                restartRecording();
+              });
+              
+              audioPlayerRef.current.onended = () => {
+                isProcessingRef.current = false;
+                restartRecording();
+              };
+            }
+          } else {
+            // Handle text or error responses
+            try {
+              const response = JSON.parse(event.data);
+              
+              if (response.error) {
+                console.error('Server Error:', response.error);
+                isProcessingRef.current = false;
+                restartRecording();
+              } else if (response.text) {
+                const decodedText = atob(response.text);
+                console.log('Decoded text:', decodedText);
+              }
+            } catch (e) {
+              console.error('Error parsing response:', e);
+              isProcessingRef.current = false;
+              restartRecording();
+            }
+          }
+        } catch (error) {
+          console.error('Error processing WebSocket message:', error);
+          isProcessingRef.current = false;
+          restartRecording();
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket Error:', error);
+        attemptReconnect();
+        isProcessingRef.current = false;
+        
+        // Attempt reconnection
+        if (reconnectAttemptRef.current < 3) {
+          setTimeout(() => {
+            reconnectAttemptRef.current++;
+            connectWebSocket();
+          }, 1000 * Math.pow(2, reconnectAttemptRef.current));
+        }
+      };
+
+      ws.onclose = (event) => {
+        console.log('WebSocket disconnected', event);
+        isProcessingRef.current = false;
+        
+        // Attempt reconnection
+        if (reconnectAttemptRef.current < 3) {
+          setTimeout(() => {
+            reconnectAttemptRef.current++;
+            connectWebSocket();
+          }, 1000 * Math.pow(2, reconnectAttemptRef.current));
+        }
+      };
+    };
+
+    connectWebSocket();
+
+    // Cleanup on unmount
     return () => {
-      if (mediaRecorder) {
-        stopRecording();
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (audioStream) {
+        audioStream.getTracks().forEach(track => track.stop());
       }
     };
   }, []);
 
-  // Expose methods to parent component
-useImperativeHandle(ref, () => ({
-  stopRecording: () => {
-    if (mediaRecorder) {
-      stopRecording();
-    }
-    
-    // Stop any audio playback
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      audioPlayerRef.current.src = ''; // Clear the source
-      isPlayingRef.current = false;
-      isProcessingResponseRef.current = false;
-    }
-  }
-}));
+  // Initialize microphone and start continuous recording
+  const initializeMicrophone = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
 
-  // Handle audio playback completion
-  useEffect(() => {
-    const audioElement = audioPlayerRef.current;
-    
-    if (audioElement) {
-      const handleEnded = () => {
-        isPlayingRef.current = false;
-        // Resume recording after playback is complete
-        if (isPaused && !isProcessingResponseRef.current) {
-          resumeRecording();
+      setAudioStream(stream);
+
+      const recorder = new MediaRecorder(stream, { 
+        mimeType: "audio/wav",
+        audioBitsPerSecond: 16000
+      });
+      
+      audioChunksRef.current = [];
+      
+      recorder.ondataavailable = (event) => {
+        if (
+          event.data.size > 0 && 
+          !isProcessingRef.current
+        ) {
+          audioChunksRef.current.push(event.data);
+          
+          // Send chunks when they accumulate
+          if (audioChunksRef.current.length >= 4) {
+            sendAudioChunks();
+          }
         }
       };
-      
-      audioElement.addEventListener('ended', handleEnded);
-      
-      return () => {
-        audioElement.removeEventListener('ended', handleEnded);
-      };
-    }
-  }, [isPaused]);
 
-  // Start recording: get mic access, create MediaRecorder, send chunks periodically
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      
-      recorder.ondataavailable = handleDataAvailable;
       recorder.onstop = () => {
-        console.log("MediaRecorder stopped");
+        restartRecording();
       };
       
-      recorder.onerror = (event) => {
-        console.error("MediaRecorder error:", event.error);
-      };
-      
-      // Start recording
-      recorder.start(1000); // request a chunk every 1 second
-      
-      setAudioStream(stream);
+      recorder.start(1000); // Collect chunks every second
       setMediaRecorder(recorder);
-      setIsActive(true);
-      console.log("Recording started automatically...");
     } catch (error) {
-      console.error("Error accessing microphone:", error);
+      console.error("Error setting up microphone:", error);
     }
   };
 
-  // This fires each time MediaRecorder has a chunk of audio
-  const handleDataAvailable = async (e) => {
-    if (e.data && e.data.size > 0 && !isPlayingRef.current && !isProcessingResponseRef.current) {
+  // Restart recording after interruption
+  const restartRecording = () => {
+    // Stop existing recorder if any
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       try {
-        isProcessingResponseRef.current = true;
-        
-        // Pause recording while we process and play the response
-        pauseRecording();
-        
-        // Prepare form data
-        const formData = new FormData();
-        formData.append("audio_file", e.data, "chunk.wav");
-
-        // Send chunk to the backend
-        const response = await fetch(
-          "https://widget-113024725109.us-central1.run.app/Response/audio",
-          {
-            method: "POST",
-            body: formData,
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Audio chunk upload failed: ${response.status}`);
-        }
-
-        // Check for audio response - handle different possible response formats
-        let audioUrl = response.headers.get("X-Audio-URL");
-        
-        if (!audioUrl) {
-          try {
-            // Try to get response as blob
-            const blob = await response.blob();
-            if (blob.size > 0) {
-              audioUrl = URL.createObjectURL(blob);
-            }
-          } catch (blobError) {
-            console.error("Error processing response as blob:", blobError);
-            
-            // Try as JSON
-            try {
-              const jsonResponse = await response.json();
-              if (jsonResponse && jsonResponse.audioUrl) {
-                audioUrl = jsonResponse.audioUrl;
-              }
-            } catch (jsonError) {
-              console.error("Error processing response as JSON:", jsonError);
-            }
-          }
-        }
-
-        if (audioUrl) {
-          // Play the returned audio automatically
-          playAudioFromUrl(audioUrl);
-        } else {
-          // No audio to play, resume recording
-          isProcessingResponseRef.current = false;
-          resumeRecording();
-        }
-      } catch (err) {
-        console.error("Error sending audio chunk:", err);
-        isProcessingResponseRef.current = false;
-        resumeRecording();
+        mediaRecorder.stop();
+      } catch (error) {
+        console.error('Error stopping recorder:', error);
       }
     }
+
+    // Restart recording after a short delay
+    setTimeout(() => {
+      if (audioStream) {
+        try {
+          const recorder = new MediaRecorder(audioStream, { 
+            mimeType: "audio/wav",
+            audioBitsPerSecond: 16000
+          });
+          
+          audioChunksRef.current = [];
+          
+          recorder.ondataavailable = (event) => {
+            if (
+              event.data.size > 0 && 
+              !isProcessingRef.current
+            ) {
+              audioChunksRef.current.push(event.data);
+              
+              // Send chunks when they accumulate
+              if (audioChunksRef.current.length >= 4) {
+                sendAudioChunks();
+              }
+            }
+          };
+
+          recorder.onstop = () => {
+            restartRecording();
+          };
+          
+          recorder.start(1000);
+          setMediaRecorder(recorder);
+        } catch (error) {
+          console.error('Error creating new recorder:', error);
+          // Attempt to reinitialize microphone
+          initializeMicrophone();
+        }
+      }
+    }, 100);
   };
 
-  // Pause recording temporarily
-  const pauseRecording = () => {
-    if (mediaRecorder && mediaRecorder.state === "recording") {
-      mediaRecorder.pause();
-      setIsPaused(true);
-      console.log("Recording paused...");
+  // Send accumulated audio chunks
+  const sendAudioChunks = async () => {
+    if (audioChunksRef.current.length === 0) return;
+
+    try {
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+      
+      if (
+        wsRef.current && 
+        wsRef.current.readyState === WebSocket.OPEN && 
+        !isProcessingRef.current
+      ) {
+        wsRef.current.send(await audioBlob.arrayBuffer());
+      }
+      
+      // Clear chunks after sending
+      audioChunksRef.current = [];
+    } catch (error) {
+      console.error('Error sending audio chunks:', error);
+      // Reset processing state if sending fails
+      isProcessingRef.current = false;
     }
   };
 
-  // Resume recording after pause
-  const resumeRecording = () => {
-    if (mediaRecorder && mediaRecorder.state === "paused") {
-      mediaRecorder.resume();
-      setIsPaused(false);
-      console.log("Recording resumed...");
-    }
-  };
-
-  // Stop recording: stop MediaRecorder and mic stream
-  const stopRecording = () => {
-    if (mediaRecorder) {
-      if (mediaRecorder.state !== "inactive") {
+  // Expose methods to parent component
+  useImperativeHandle(ref, () => ({
+    stopRecording: () => {
+      if (mediaRecorder) {
         mediaRecorder.stop();
       }
-      mediaRecorder.ondataavailable = null;
+      if (audioStream) {
+        audioStream.getTracks().forEach(track => track.stop());
+      }
     }
-    
-    if (audioStream) {
-      audioStream.getTracks().forEach((track) => track.stop());
-    }
-    
-    setMediaRecorder(null);
-    setAudioStream(null);
-    setIsActive(false);
-    setIsPaused(false);
-    console.log("Recording stopped completely...");
-  };
-
-  // Utility: Play audio by setting the <audio> element's src
-  const playAudioFromUrl = (url) => {
-    if (audioPlayerRef.current) {
-      isPlayingRef.current = true;
-      
-      audioPlayerRef.current.src = url;
-      audioPlayerRef.current.onplay = () => {
-        console.log("Audio playback started");
-      };
-      
-      audioPlayerRef.current.onended = () => {
-        console.log("Audio playback ended");
-        isPlayingRef.current = false;
-        isProcessingResponseRef.current = false;
-        
-        // Create a small delay before resuming recording to avoid feedback
-        setTimeout(() => {
-          if (isPaused) {
-            resumeRecording();
-          }
-        }, 300);
-      };
-      
-      audioPlayerRef.current.onerror = (err) => {
-        console.error("Audio playback error:", err);
-        isPlayingRef.current = false;
-        isProcessingResponseRef.current = false;
-        
-        // Resume recording even if playback fails
-        if (isPaused) {
-          resumeRecording();
-        }
-      };
-      
-      audioPlayerRef.current.play().catch((err) => {
-        console.error("Failed to play audio:", err);
-        isPlayingRef.current = false;
-        isProcessingResponseRef.current = false;
-        
-        // Resume recording even if playback fails
-        if (isPaused) {
-          resumeRecording();
-        }
-      });
-    }
-  };
+  }));
 
   return (
     <div className="flex-1">
-      {/* Hidden audio element for playback - no visible controls */}
       <audio ref={audioPlayerRef} className="hidden" />
-      
-      {/* Rest of the UI from DynamicIsland.jsx will handle the visible state/UI */}
     </div>
   );
 });
+
+AudioChat.displayName = 'AudioChat';
 
 export default AudioChat;
