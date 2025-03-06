@@ -1,259 +1,285 @@
-import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
+// import "regenerator-runtime/runtime";
+// import React, { useEffect, useRef, forwardRef, useImperativeHandle } from "react";
+// import SpeechRecognition, { useSpeechRecognition } from "react-speech-recognition";
+
+// const AudioChat = forwardRef((props, ref) => {
+//   // Refs for MediaRecorder, audio stream, audio chunks, WebSocket, and audio playback
+//   const mediaRecorderRef = useRef(null);
+//   const audioStreamRef = useRef(null);
+//   const audioChunksRef = useRef([]);
+//   const socketRef = useRef(null);
+//   const audioPlayerRef = useRef(null);
+
+//   // Use SpeechRecognition only for silence detection (transcript is not used)
+//   const { listening, resetTranscript } = useSpeechRecognition();
+
+//   // Start MediaRecorder to capture raw audio
+//   const startMediaRecording = async () => {
+//     try {
+//       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+//       audioStreamRef.current = stream;
+//       const recorder = new MediaRecorder(stream);
+//       mediaRecorderRef.current = recorder;
+
+//       // Collect audio chunks
+//       recorder.ondataavailable = async (event) => {
+//         if (event.data && event.data.size > 0) {
+//           audioChunksRef.current.push(event.data);
+//         }
+//       };
+
+//       // When recording stops, combine chunks and send to backend
+//       recorder.onstop = async () => {
+//         console.log("MediaRecorder stopped");
+//         if (audioChunksRef.current.length === 0) {
+//           console.log("No audio chunks recorded");
+//           return;
+//         }
+//         const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+//         audioChunksRef.current = []; // Reset the buffer
+
+//         if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+//           const arrayBuffer = await blob.arrayBuffer();
+//           socketRef.current.send(arrayBuffer);
+//           console.log("Sent audio chunk to backend, size:", arrayBuffer.byteLength);
+//         } else {
+//           console.error("WebSocket is not open");
+//         }
+//       };
+
+//       recorder.start();
+//       console.log("MediaRecorder started");
+//     } catch (error) {
+//       console.error("Error starting MediaRecorder:", error);
+//     }
+//   };
+
+//   // Setup WebSocket connection
+//   useEffect(() => {
+//     const ws = new WebSocket("ws://localhost:8000/Response/ws/audio");
+//     ws.binaryType = "arraybuffer";
+//     ws.onopen = () => console.log("WebSocket connected");
+//     ws.onmessage = (event) => {
+//       if (event.data instanceof ArrayBuffer) {
+//         console.log("Received audio response from server, size:", event.data.byteLength);
+//         // Create a Blob from the received ArrayBuffer and generate an object URL
+//         const audioBlob = new Blob([event.data], { type: "audio/wav" });
+//         const audioUrl = URL.createObjectURL(audioBlob);
+//         if (audioPlayerRef.current) {
+//           audioPlayerRef.current.src = audioUrl;
+//           audioPlayerRef.current.play().catch((err) => {
+//             console.error("Error playing audio:", err);
+//           });
+//         }
+//       } else {
+//         console.log("Received message:", event.data);
+//       }
+//     };
+//     ws.onerror = (err) => console.error("WebSocket error:", err);
+//     ws.onclose = () => console.log("WebSocket closed");
+//     socketRef.current = ws;
+
+//     return () => {
+//       if (ws.readyState === WebSocket.OPEN) ws.close();
+//     };
+//   }, []);
+
+//   // Start recording and speech recognition on mount
+//   useEffect(() => {
+//     startMediaRecording();
+//     // Use continuous: false so that silence triggers stop automatically
+//     SpeechRecognition.startListening({ continuous: false });
+//     return () => {
+//       if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+//         mediaRecorderRef.current.stop();
+//       }
+//       if (audioStreamRef.current) {
+//         audioStreamRef.current.getTracks().forEach((track) => track.stop());
+//       }
+//       SpeechRecognition.stopListening();
+//     };
+//   }, []);
+
+//   // When silence is detected (listening becomes false), stop MediaRecorder and then restart
+//   useEffect(() => {
+//     if (!listening) {
+//       console.log("Silence detected. Stopping MediaRecorder to send audio.");
+//       if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+//         mediaRecorderRef.current.stop();
+//       }
+//       resetTranscript();
+//       // Wait 500ms before restarting recording
+//       setTimeout(() => {
+//         startMediaRecording();
+//         SpeechRecognition.startListening({ continuous: false });
+//       }, 500);
+//     }
+//   }, [listening, resetTranscript]);
+
+//   // Expose stopRecording method to parent components
+//   useImperativeHandle(ref, () => ({
+//     stopRecording: () => {
+//       if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+//         mediaRecorderRef.current.stop();
+//       }
+//       if (audioStreamRef.current) {
+//         audioStreamRef.current.getTracks().forEach((track) => track.stop());
+//       }
+//       SpeechRecognition.stopListening();
+//       if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+//         socketRef.current.close();
+//       }
+//     },
+//   }));
+
+//   return (
+//     <div>
+//       <p>Listening: {listening ? "Yes" : "No"}</p>
+//       {/* Audio element to play backend audio */}
+//       <audio ref={audioPlayerRef} controls style={{ width: "100%" }} />
+//     </div>
+//   );
+// });
+
+// export default AudioChat;
+
+import "regenerator-runtime/runtime";
+import React, { useEffect, useRef, forwardRef, useImperativeHandle } from "react";
+import SpeechRecognition, { useSpeechRecognition } from "react-speech-recognition";
 
 const AudioChat = forwardRef((props, ref) => {
-  const [mediaRecorder, setMediaRecorder] = useState(null);
-  const [audioStream, setAudioStream] = useState(null);
-  const audioPlayerRef = useRef(null);
-  const wsRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioStreamRef = useRef(null);
   const audioChunksRef = useRef([]);
-  const isProcessingRef = useRef(false);
-  const reconnectAttemptRef = useRef(0);
+  const socketRef = useRef(null);
+  const audioPlayerRef = useRef(null);
 
-  // WebSocket setup
+
+  const { listening, resetTranscript } = useSpeechRecognition();
+
+
+  const startMediaRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = async (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        console.log("MediaRecorder stopped");
+        if (audioChunksRef.current.length === 0) {
+          console.log("No audio chunks recorded");
+          return;
+        }
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        audioChunksRef.current = [];
+
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          const arrayBuffer = await blob.arrayBuffer();
+          socketRef.current.send(arrayBuffer);
+          console.log("Sent audio chunk to backend, size:", arrayBuffer.byteLength);
+        } else {
+          console.error("WebSocket is not open");
+        }
+      };
+
+      recorder.start();
+      console.log("MediaRecorder started");
+    } catch (error) {
+      console.error("Error starting MediaRecorder:", error);
+    }
+  };
+
+
   useEffect(() => {
-    const connectWebSocket = () => {
-      // Close existing connection if any
-      if (wsRef.current) {
-        wsRef.current.close();
+    const ws = new WebSocket("ws://localhost:8000/Response/ws/audio");
+    ws.binaryType = "arraybuffer";
+    ws.onopen = () => console.log("WebSocket connected");
+    ws.onmessage = (event) => {
+      if (event.data instanceof ArrayBuffer) {
+        console.log("Received audio response from server, size:", event.data.byteLength);
+       
+        const audioBlob = new Blob([event.data], { type: "audio/wav" });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.src = audioUrl;
+          audioPlayerRef.current.play().catch((err) => {
+            console.error("Error playing audio:", err);
+          });
+          audioPlayerRef.current.onended = () => {
+            console.log("Audio playback ended. Restarting recording.");
+            startMediaRecording();
+            SpeechRecognition.startListening({ continuous: false });
+          };
+        }
+      } else {
+        console.log("Received message:", event.data);
       }
-
-      const ws = new WebSocket('wss://widget-113024725109.us-central1.run.app/Response/ws/audio');
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log('WebSocket connected');
-        reconnectAttemptRef.current = 0;
-        initializeMicrophone();
-      };
-
-      ws.onmessage = async (event) => {
-        try {
-          if (event.data instanceof Blob) {
-            // Handle audio response
-            const audioBlob = new Blob([event.data], { type: 'audio/wav' });
-            const audioUrl = URL.createObjectURL(audioBlob);
-            
-            if (audioPlayerRef.current) {
-              isProcessingRef.current = true;
-              
-              audioPlayerRef.current.src = audioUrl;
-              await audioPlayerRef.current.play().catch(error => {
-                console.error('Error playing audio:', error);
-                isProcessingRef.current = false;
-                restartRecording();
-              });
-              
-              audioPlayerRef.current.onended = () => {
-                isProcessingRef.current = false;
-                restartRecording();
-              };
-            }
-          } else {
-            // Handle text or error responses
-            try {
-              const response = JSON.parse(event.data);
-              
-              if (response.error) {
-                console.error('Server Error:', response.error);
-                isProcessingRef.current = false;
-                restartRecording();
-              } else if (response.text) {
-                const decodedText = atob(response.text);
-                console.log('Decoded text:', decodedText);
-              }
-            } catch (e) {
-              console.error('Error parsing response:', e);
-              isProcessingRef.current = false;
-              restartRecording();
-            }
-          }
-        } catch (error) {
-          console.error('Error processing WebSocket message:', error);
-          isProcessingRef.current = false;
-          restartRecording();
-        }
-      };
-
-      ws.onerror = (error) => {
-        console.error('WebSocket Error:', error);
-        attemptReconnect();
-        isProcessingRef.current = false;
-        
-        // Attempt reconnection
-        if (reconnectAttemptRef.current < 3) {
-          setTimeout(() => {
-            reconnectAttemptRef.current++;
-            connectWebSocket();
-          }, 1000 * Math.pow(2, reconnectAttemptRef.current));
-        }
-      };
-
-      ws.onclose = (event) => {
-        console.log('WebSocket disconnected', event);
-        isProcessingRef.current = false;
-        
-        // Attempt reconnection
-        if (reconnectAttemptRef.current < 3) {
-          setTimeout(() => {
-            reconnectAttemptRef.current++;
-            connectWebSocket();
-          }, 1000 * Math.pow(2, reconnectAttemptRef.current));
-        }
-      };
     };
+    ws.onerror = (err) => console.error("WebSocket error:", err);
+    ws.onclose = () => console.log("WebSocket closed");
+    socketRef.current = ws;
 
-    connectWebSocket();
-
-    // Cleanup on unmount
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      if (audioStream) {
-        audioStream.getTracks().forEach(track => track.stop());
-      }
+      if (ws.readyState === WebSocket.OPEN) ws.close();
     };
   }, []);
 
-  // Initialize microphone and start continuous recording
-  const initializeMicrophone = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        } 
-      });
-
-      setAudioStream(stream);
-
-      const recorder = new MediaRecorder(stream, { 
-        mimeType: "audio/webm",
-        audioBitsPerSecond: 16000
-      });
-      
-      audioChunksRef.current = [];
-      
-      recorder.ondataavailable = (event) => {
-        if (
-          event.data.size > 0 && 
-          !isProcessingRef.current
-        ) {
-          audioChunksRef.current.push(event.data);
-          
-          // Send chunks when they accumulate
-          if (audioChunksRef.current.length >= 4) {
-            sendAudioChunks();
-          }
-        }
-      };
-
-      recorder.onstop = () => {
-        restartRecording();
-      };
-      
-      recorder.start(1000); // Collect chunks every second
-      setMediaRecorder(recorder);
-    } catch (error) {
-      console.error("Error setting up microphone:", error);
-    }
-  };
-
-  // Restart recording after interruption
-  const restartRecording = () => {
-    // Stop existing recorder if any
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      try {
-        mediaRecorder.stop();
-      } catch (error) {
-        console.error('Error stopping recorder:', error);
+  useEffect(() => {
+    startMediaRecording();
+    SpeechRecognition.startListening({ continuous: false });
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop();
       }
-    }
-
-    // Restart recording after a short delay
-    setTimeout(() => {
-      if (audioStream) {
-        try {
-          const recorder = new MediaRecorder(audioStream, { 
-            mimeType: "audio/webm",
-            audioBitsPerSecond: 16000
-          });
-          
-          audioChunksRef.current = [];
-          
-          recorder.ondataavailable = (event) => {
-            if (
-              event.data.size > 0 && 
-              !isProcessingRef.current
-            ) {
-              audioChunksRef.current.push(event.data);
-              
-              // Send chunks when they accumulate
-              if (audioChunksRef.current.length >= 4) {
-                sendAudioChunks();
-              }
-            }
-          };
-
-          recorder.onstop = () => {
-            restartRecording();
-          };
-          
-          recorder.start(1000);
-          setMediaRecorder(recorder);
-        } catch (error) {
-          console.error('Error creating new recorder:', error);
-          // Attempt to reinitialize microphone
-          initializeMicrophone();
-        }
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
       }
-    }, 100);
-  };
+      SpeechRecognition.stopListening();
+    };
+  }, []);
 
-  // Send accumulated audio chunks
-  const sendAudioChunks = async () => {
-    if (audioChunksRef.current.length === 0) return;
 
-    try {
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-      
-      if (
-        wsRef.current && 
-        wsRef.current.readyState === WebSocket.OPEN && 
-        !isProcessingRef.current
-      ) {
-        wsRef.current.send(await audioBlob.arrayBuffer());
+  useEffect(() => {
+    if (!listening) {
+      console.log("Silence detected. Stopping MediaRecorder to send audio.");
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop();
       }
+      resetTranscript();
       
-      // Clear chunks after sending
-      audioChunksRef.current = [];
-    } catch (error) {
-      console.error('Error sending audio chunks:', error);
-      // Reset processing state if sending fails
-      isProcessingRef.current = false;
     }
-  };
+  }, [listening, resetTranscript]);
 
-  // Expose methods to parent component
+
   useImperativeHandle(ref, () => ({
     stopRecording: () => {
-      if (mediaRecorder) {
-        mediaRecorder.stop();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop();
       }
-      if (audioStream) {
-        audioStream.getTracks().forEach(track => track.stop());
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
       }
-    }
+      SpeechRecognition.stopListening();
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.close();
+      }
+    },
   }));
 
   return (
-    <div className="flex-1">
+    <div>
+      <p>Listening: {listening ? "Yes" : "No"}</p>
+      {/* Audio element to play backend audio */}
       <audio ref={audioPlayerRef} className="hidden" />
     </div>
   );
 });
-
-AudioChat.displayName = 'AudioChat';
 
 export default AudioChat;
