@@ -275,7 +275,7 @@ const AudioChat = forwardRef((props, ref) => {
 
   return (
     <div>
-      <p>Listening: {listening ? "Yes" : "No"}</p>
+      {/* <p>Listening: {listening ? "Yes" : "No"}</p> */}
       {/* Audio element to play backend audio */}
       <audio ref={audioPlayerRef} className="hidden" />
     </div>
