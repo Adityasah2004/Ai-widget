@@ -69,7 +69,7 @@ const VideoChat = forwardRef((props, ref) => {
           formData.append("audio_file", blob, "utterance.wav");
 
           console.log("Sending audio to backend...");
-          const response = await fetch("http://localhost:8000/Response/video", {
+          const response = await fetch("https://widget-113024725109.us-central1.run.app/Response/video", {
             method: "POST",
             body: formData,
           });

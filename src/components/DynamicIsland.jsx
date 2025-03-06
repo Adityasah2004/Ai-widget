@@ -15,6 +15,7 @@ const DynamicIsland = () => {
   const [showText,setShowText] = useState(true);
   const fileInputRef = useRef(null);
   const audioChatRef = useRef(null);
+  const videoChatRef = useRef(null); // New ref for VideoChat
 
   window.onscroll = () => {
     if (window.scrollY > 200) {
@@ -71,6 +72,9 @@ const DynamicIsland = () => {
     if (audioChatRef.current) {
       audioChatRef.current.stopRecording();
     }
+    if (videoChatRef.current) {
+        videoChatRef.current.stopRecording();
+      }
   };
 
   return (
@@ -101,7 +105,7 @@ const DynamicIsland = () => {
             {
                 voiceVideoExpanded && (
                 <div className="flex flex-col items-center sm:mt-14 mt-8 justify-between flex-1 gap-2 w-full">
-                    {callType === "video" ? <VideoChat /> : <AudioChat ref={audioChatRef} />}
+                    {callType === "video" ? <VideoChat  ref={videoChatRef}  /> : <AudioChat ref={audioChatRef} />}
                     <p className="flex items-start text-sm text-[#B0B0B0] min-h-[80px] max-h-[80px] gap-2 duration-500 transition-all w-full rounded-[20px] p-2">
                         Our Polo T-Shirts combine style and comfort, available in a wide range of colors including classic shades like white, black, navy blue.
                     </p>
