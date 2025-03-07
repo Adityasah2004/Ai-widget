@@ -1,10 +1,13 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import TextChat from "./TextChat";
 import AudioChat from "./AudioChat";
 import VideoChat from "./VideoChat";
 import ClothesTryOn from "./ClothesTryOn";
 
-const DynamicIsland = () => {
+const DynamicIsland = (props) => {
+  // Log props to debug what's coming in
+  console.log('DynamicIsland props:', props);
+
   const [expanded, setExpanded] = useState(false);
   const [formExpanded, setFormExpanded] = useState(false);
   const [voiceVideoExpanded, setVoiceVideoExpanded] = useState(false);
@@ -12,18 +15,37 @@ const DynamicIsland = () => {
   const [callType, setCallType] = useState(null);
   const [uploadedImage, setUploadedImage] = useState(null);
   const [garment, setGarment] = useState(null);
-  const [showText,setShowText] = useState(true);
+  const [showText, setShowText] = useState(true);
   const fileInputRef = useRef(null);
   const audioChatRef = useRef(null);
-  const videoChatRef = useRef(null); // New ref for VideoChat
+  const videoChatRef = useRef(null);
 
-  window.onscroll = () => {
-    if (window.scrollY > 200) {
-      setExpanded(true);
-    } else if (window.scrollY < 200 && !formExpanded) {
-      setExpanded(false);
+  // Use useEffect for window events instead of direct assignment
+  useEffect(() => {
+    const handleScroll = () => {
+      try {
+        if (window?.scrollY > 200) {
+          setExpanded(true);
+        } else if (window?.scrollY < 200 && !formExpanded) {
+          setExpanded(false);
+        }
+      } catch (error) {
+        console.error('Error in scroll handler:', error);
+      }
+    };
+
+    // Safely add event listener
+    if (typeof window !== 'undefined') {
+      window.addEventListener('scroll', handleScroll);
     }
-  };
+
+    // Clean up
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('scroll', handleScroll);
+      }
+    };
+  }, [formExpanded]); // Add formExpanded as dependency
 
   const handleLeftBtnClick = () => {
     if (expanded) {
@@ -34,29 +56,33 @@ const DynamicIsland = () => {
   };
 
   const handleRightBtnClick = () => {
-    // Default to voice mode; user can toggle to video via the buttons below.
     setCallType("voice");
     setVoiceVideoExpanded(true);
   };
 
   const handleDISubmit = (e) => {
-    console.log("clicked on DI submit")
-    e.preventDefault();
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
+    console.log("clicked on DI submit");
     if (showText) {
-        console.log("show is true")
-        setShowText(false)
+      console.log("show is true");
+      setShowText(false);
     } else {
-        console.log("show is false")
-        return;
-    };
+      console.log("show is false");
+    }
   };
 
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
+    const file = e?.target?.files?.[0];
     if (file) {
-      const imageUrl = URL.createObjectURL(file);
-      setUploadedImage(imageUrl);
-      console.log(imageUrl, file);
+      try {
+        const imageUrl = URL.createObjectURL(file);
+        setUploadedImage(imageUrl);
+        console.log(imageUrl, file);
+      } catch (error) {
+        console.error("Error creating object URL:", error);
+      }
     }
   };
 
@@ -68,13 +94,22 @@ const DynamicIsland = () => {
     setGarment(null);
     setShowText(true);
     
-    // Stop audio recording if active
-    if (audioChatRef.current) {
-      audioChatRef.current.stopRecording();
+    // Safely stop recording if refs exist
+    try {
+      if (audioChatRef?.current?.stopRecording) {
+        audioChatRef.current.stopRecording();
+      }
+    } catch (error) {
+      console.error("Error stopping audio recording:", error);
     }
-    if (videoChatRef.current) {
+    
+    try {
+      if (videoChatRef?.current?.stopRecording) {
         videoChatRef.current.stopRecording();
       }
+    } catch (error) {
+      console.error("Error stopping video recording:", error);
+    }
   };
 
   return (
@@ -105,7 +140,10 @@ const DynamicIsland = () => {
             {
                 voiceVideoExpanded && (
                 <div className="flex flex-col items-center sm:mt-14 mt-8 justify-between flex-1 gap-2 w-full">
-                    {callType === "video" ? <VideoChat  ref={videoChatRef}  /> : <AudioChat ref={audioChatRef} />}
+                    {callType === "video" ? 
+                      <VideoChat ref={videoChatRef} /> : 
+                      <AudioChat ref={audioChatRef} />
+                    }
                     <p className="flex items-start text-sm text-[#B0B0B0] min-h-[80px] max-h-[80px] gap-2 duration-500 transition-all w-full rounded-[20px] p-2">
                         Our Polo T-Shirts combine style and comfort, available in a wide range of colors including classic shades like white, black, navy blue.
                     </p>
